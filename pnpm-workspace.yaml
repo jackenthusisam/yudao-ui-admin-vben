@@ -195,7 +195,7 @@ catalog:
   tailwindcss-animate: ^1.0.7
   tdesign-vue-next: ^1.18.0
   theme-colors: ^0.1.0
-  tinymce: ^7.3.0
+  tinymce: ^8.4.0
   tippy.js: ^6.3.7
   turbo: ^2.8.3
   typescript: ^5.9.3
