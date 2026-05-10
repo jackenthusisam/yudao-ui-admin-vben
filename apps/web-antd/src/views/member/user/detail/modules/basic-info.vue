@@ -44,6 +44,10 @@ const [Descriptions] = useDescription({
         }),
     },
     {
+      field: 'inviteCode',
+      label: '邀请码',
+    },
+    {
       field: 'areaName',
       label: '所在地',
     },

@@ -2,13 +2,18 @@
 import type { VbenFormSchema } from '@vben/common-ui';
 
 import type { AuthApi } from '#/api/core/auth';
+import type { MemberAuthApi } from '#/api/member/auth';
 
 import { computed, h, onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import { AuthenticationRegister, Verification, z } from '@vben/common-ui';
+import { LOGIN_PATH } from '@vben/constants';
 import { isCaptchaEnable, isTenantEnable } from '@vben/hooks';
 import { $t } from '@vben/locales';
 import { useAccessStore } from '@vben/stores';
+
+import { notification } from 'ant-design-vue';
 
 import {
   checkCaptcha,
@@ -16,14 +21,15 @@ import {
   getTenantByWebsite,
   getTenantSimpleList,
 } from '#/api/core/auth';
-import { useAuthStore } from '#/store';
+import { register } from '#/api/member/auth';
 
 defineOptions({ name: 'Register' });
 
 const loading = ref(false);
 
+const route = useRoute();
+const router = useRouter();
 const accessStore = useAccessStore();
-const authStore = useAuthStore();
 const tenantEnable = isTenantEnable();
 const captchaEnable = isCaptchaEnable();
 
@@ -32,69 +38,108 @@ const verifyRef = ref();
 
 const captchaType = 'blockPuzzle'; // 验证码类型：'blockPuzzle' | 'clickWord'
 
+function getQueryString(value: unknown) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function getInviteCodeFromQuery() {
+  const inviteCode = getQueryString(route.query.inviteCode);
+  return typeof inviteCode === 'string' ? inviteCode : undefined;
+}
+
+function getTenantIdFromQuery() {
+  const tenantId = Number(getQueryString(route.query.tenantId));
+  return Number.isFinite(tenantId) && tenantId > 0 ? tenantId : null;
+}
+
+function setFormValue(fieldName: string, value?: string) {
+  if (value) {
+    registerRef.value?.getFormApi().setFieldValue(fieldName, value);
+  }
+}
+
 /** 获取租户列表，并默认选中 */
-const tenantList = ref<AuthApi.TenantResult[]>([]); // 租户列表
+const tenantList = ref<AuthApi.TenantResult[]>([]);
 async function fetchTenantList() {
   if (!tenantEnable) {
     return;
   }
   try {
-    // 获取租户列表、域名对应租户
     const websiteTenantPromise = getTenantByWebsite(window.location.hostname);
     tenantList.value = await getTenantSimpleList();
 
-    // 选中租户：域名 > store 中的租户 > 首个租户
-    let tenantId: null | number = null;
+    let tenantId: null | number = getTenantIdFromQuery();
     const websiteTenant = await websiteTenantPromise;
-    if (websiteTenant?.id) {
+    if (!tenantId && websiteTenant?.id) {
       tenantId = websiteTenant.id;
     }
-    // 如果没有从域名获取到租户，尝试从 store 中获取
     if (!tenantId && accessStore.tenantId) {
       tenantId = accessStore.tenantId;
     }
-    // 如果还是没有租户，使用列表中的第一个
     if (!tenantId && tenantList.value?.[0]?.id) {
       tenantId = tenantList.value[0].id;
     }
 
-    // 设置选中的租户编号
-    accessStore.setTenantId(tenantId);
-    registerRef.value
-      .getFormApi()
-      .setFieldValue('tenantId', tenantId?.toString());
+    if (tenantId) {
+      accessStore.setTenantId(tenantId);
+      setFormValue('tenantId', tenantId.toString());
+    }
   } catch (error) {
     console.error('获取租户列表失败:', error);
   }
 }
 
+function buildRegisterParams(values: Record<string, any>) {
+  return {
+    captchaVerification: values.captchaVerification,
+    inviteCode: values.inviteCode || undefined,
+    mobile: values.mobile,
+    password: values.password,
+    tenantId: Number(values.tenantId || accessStore.tenantId),
+  } as MemberAuthApi.RegisterParams;
+}
+
 /** 执行注册 */
-async function handleRegister(values: any) {
-  // 如果开启验证码，则先验证验证码
-  if (captchaEnable) {
+async function handleRegister(values: Record<string, any>) {
+  if (captchaEnable && !values.captchaVerification) {
     verifyRef.value.show();
     return;
   }
 
-  // 无验证码，直接登录
-  await authStore.authLogin('register', values);
+  loading.value = true;
+  try {
+    await register(buildRegisterParams(values));
+    notification.success({
+      description: '注册成功，请使用手机号和密码登录',
+      duration: 3,
+      message: '注册成功',
+    });
+    await router.push(LOGIN_PATH);
+  } catch (error) {
+    console.error('注册失败:', error);
+    notification.error({
+      description: (error as Error)?.message || '注册失败，请稍后重试',
+      duration: 3,
+      message: '注册失败',
+    });
+  } finally {
+    loading.value = false;
+  }
 }
 
 /** 验证码通过，执行注册 */
-const handleVerifySuccess = async ({ captchaVerification }: any) => {
+async function handleVerifySuccess({ captchaVerification }: any) {
   try {
-    await authStore.authLogin('register', {
-      ...(await registerRef.value.getFormApi().getValues()),
-      captchaVerification,
-    });
+    const values = await registerRef.value.getFormApi().getValues();
+    await handleRegister({ ...values, captchaVerification });
   } catch (error) {
     console.error('Error in handleRegister:', error);
   }
-};
+}
 
-/** 组件挂载时获取租户信息 */
 onMounted(() => {
   fetchTenantList();
+  setFormValue('inviteCode', getInviteCodeFromQuery());
 });
 
 const formSchema = computed((): VbenFormSchema[] => {
@@ -124,20 +169,25 @@ const formSchema = computed((): VbenFormSchema[] => {
     {
       component: 'VbenInput',
       componentProps: {
-        placeholder: $t('authentication.usernameTip'),
+        placeholder: $t('authentication.mobileTip'),
       },
-      fieldName: 'username',
-      label: $t('authentication.username'),
-      rules: z.string().min(1, { message: $t('authentication.usernameTip') }),
+      fieldName: 'mobile',
+      label: $t('authentication.mobile'),
+      rules: z
+        .string()
+        .min(1, { message: $t('authentication.mobileTip') })
+        .regex(/^1[3-9]\d{9}$/, {
+          message: $t('authentication.mobileFormatTip'),
+        }),
     },
     {
       component: 'VbenInput',
       componentProps: {
-        placeholder: $t('authentication.nicknameTip'),
+        placeholder: '请输入邀请码（可选）',
       },
-      fieldName: 'nickname',
-      label: $t('authentication.nickname'),
-      rules: z.string().min(1, { message: $t('authentication.nicknameTip') }),
+      fieldName: 'inviteCode',
+      label: '邀请码',
+      rules: z.string().optional(),
     },
     {
       component: 'VbenInputPassword',
@@ -152,7 +202,10 @@ const formSchema = computed((): VbenFormSchema[] => {
           strengthText: () => $t('authentication.passwordStrength'),
         };
       },
-      rules: z.string().min(1, { message: $t('authentication.passwordTip') }),
+      rules: z
+        .string()
+        .min(4, { message: '密码长度为 4-16 位' })
+        .max(16, { message: '密码长度为 4-16 位' }),
     },
     {
       component: 'VbenInputPassword',
@@ -184,7 +237,7 @@ const formSchema = computed((): VbenFormSchema[] => {
             h(
               'a',
               {
-                class: 'vben-link ml-1 ',
+                class: 'vben-link ml-1',
                 href: '',
               },
               `${$t('authentication.privacyPolicy')} & ${$t('authentication.terms')}`,

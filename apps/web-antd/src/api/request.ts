@@ -21,10 +21,15 @@ import { useAuthStore } from '#/store';
 import { refreshTokenApi } from './core';
 
 const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
+const appApiURL = apiURL.replace('/admin-api', '/app-api');
 const tenantEnable = isTenantEnable();
 const apiEncrypt = createApiEncrypt(import.meta.env);
 
-function createRequestClient(baseURL: string, options?: RequestClientOptions) {
+function createRequestClient(
+  baseURL: string,
+  options?: RequestClientOptions,
+  appendAuthorization = true,
+) {
   const client = new RequestClient({
     ...options,
     baseURL,
@@ -76,7 +81,9 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
     fulfilled: async (config) => {
       const accessStore = useAccessStore();
 
-      config.headers.Authorization = formatToken(accessStore.accessToken);
+      config.headers.Authorization = appendAuthorization
+        ? formatToken(accessStore.accessToken)
+        : null;
       config.headers['Accept-Language'] = preferences.app.locale;
       // 添加租户编号
       config.headers['tenant-id'] = tenantEnable
@@ -171,6 +178,14 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
 export const requestClient = createRequestClient(apiURL, {
   responseReturn: 'data',
 });
+
+export const appRequestClient = createRequestClient(
+  appApiURL,
+  {
+    responseReturn: 'data',
+  },
+  false,
+);
 
 export const baseRequestClient = new RequestClient({ baseURL: apiURL });
 baseRequestClient.addRequestInterceptor({

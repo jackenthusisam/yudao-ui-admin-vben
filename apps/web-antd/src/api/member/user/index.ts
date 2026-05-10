@@ -24,6 +24,10 @@ export namespace MemberUserApi {
     point?: number;
     totalPoint?: number;
     experience?: number;
+    /** 邀请码 */
+    inviteCode?: string;
+    /** 邀请人编号 */
+    inviteUserId?: number;
   }
 
   /** 会员用户等级更新信息 */
@@ -67,4 +71,11 @@ export function updateUserLevel(data: MemberUserApi.UserUpdateLevelReqVO) {
 /** 修改会员用户积分 */
 export function updateUserPoint(data: MemberUserApi.UserPointUpdateReqVO) {
   return requestClient.put('/member/user/update-point', data);
+}
+
+/** 获取邀请链接 */
+export async function getInviteLink() {
+  return requestClient.get<{ inviteCode: string; tenantId: number }>(
+    '/member/user/get-invite-link',
+  );
 }

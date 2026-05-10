@@ -14,6 +14,12 @@ export default defineConfig(async () => {
             target: 'http://localhost:48080/admin-api',
             ws: true,
           },
+          '/app-api': {
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/app-api/, ''),
+            target: 'http://localhost:48080/app-api',
+            ws: true,
+          },
         },
       },
     },
