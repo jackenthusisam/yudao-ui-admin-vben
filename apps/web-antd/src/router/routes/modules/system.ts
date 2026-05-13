@@ -11,6 +11,15 @@ const routes: RouteRecordRaw[] = [
       hideInMenu: true,
     },
   },
+  {
+    path: '/system/promotion',
+    component: () => import('#/views/system/promotion/index.vue'),
+    name: 'SystemPromotion',
+    meta: {
+      title: '推广关系',
+      icon: 'lucide:git-branch',
+    },
+  },
 ];
 
 export default routes;
